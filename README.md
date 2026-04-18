@@ -156,6 +156,7 @@ npx open-banking-chile --bank falabella --screenshots --pretty
 | `--screenshots`     | Guardar screenshots locales en `./screenshots/`                 |
 | `--headful`         | Chrome visible (debugging). **BancoEstado siempre usa headful** |
 | `--owner <T\|A\|B>` | Filtro Titular/Adicional para TC (default: B = todos)           |
+| `--from-date <fecha>` | Solo movimientos desde esta fecha (inclusive, formato DD-MM-YYYY) |
 
 ### Como librería
 
@@ -174,6 +175,13 @@ import { falabella } from "open-banking-chile";
 const result = await falabella.scrape({
   rut: "12345678-9",
   password: "mi_clave",
+});
+
+// Opción 3: filtrar desde una fecha
+const result = await falabella.scrape({
+  rut: "12345678-9",
+  password: "mi_clave",
+  fromDate: "01-03-2026", // solo movimientos desde el 1 de marzo de 2026
 });
 
 if (result.success) {
@@ -435,6 +443,7 @@ Inicia un scraping en segundo plano y retorna inmediatamente un `jobId` para hac
 | `rut` | string | ✅ | RUT del titular (ej: `"12345678-9"`) |
 | `password` | string | ✅ | Clave de internet del banco |
 | `owner` | `"T"` \| `"A"` \| `"B"` | — | Filtro de tarjeta titular/adicional/ambos (default: `"B"`) |
+| `fromDate` | string | — | Solo movimientos desde esta fecha (inclusive, formato `DD-MM-YYYY`) |
 
 ```bash
 curl -X POST \

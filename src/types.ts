@@ -127,6 +127,8 @@ export interface ScraperOptions extends BankCredentials {
   headful?: boolean;
   /** Filtro Titular/Adicional para TC (ej: "T" = titular, "A" = adicional, "B" = todos). Default: "B" */
   owner?: "T" | "A" | "B";
+  /** Retornar solo movimientos desde esta fecha (inclusive). Formato: DD-MM-YYYY. Ej: "01-03-2026" */
+  fromDate?: string;
   /** Callback de progreso para mostrar estado al usuario */
   onProgress?: (step: string) => void;
   /** Callback invocado en cada línea de debug en tiempo real */

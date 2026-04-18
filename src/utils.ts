@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { Page } from "puppeteer-core";
-import type { BankMovement, CardOwner } from "./types.js";
+import type { BankMovement, CardOwner, ScrapeResult } from "./types.js";
 import { CARD_OWNER } from "./types.js";
 
 /**
@@ -194,6 +194,29 @@ export function normalizeOwner(raw?: string): CardOwner | undefined {
   if (lower.includes("adicional")) return CARD_OWNER.adicional;
   if (lower.includes("titular")) return CARD_OWNER.titular;
   return CARD_OWNER.titular; // default si hay owner pero no matchea
+}
+
+/** Parsea una fecha DD-MM-YYYY a objeto Date para comparaciones */
+export function parseMovementDate(dateStr: string): Date {
+  const [day, month, year] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/** Filtra los movimientos de un ScrapeResult retornando solo los desde fromDate (inclusive, DD-MM-YYYY) */
+export function filterByFromDate(result: ScrapeResult, fromDate: string): ScrapeResult {
+  const cutoff = parseMovementDate(fromDate);
+  const filter = (movements: BankMovement[]) =>
+    movements.filter((m) => parseMovementDate(m.date) >= cutoff);
+
+  return {
+    ...result,
+    accounts: result.accounts?.map((a) => ({ ...a, movements: filter(a.movements) })),
+    creditCards: result.creditCards?.map((c) => ({
+      ...c,
+      movements: c.movements ? filter(c.movements) : undefined,
+    })),
+    movements: result.movements ? filter(result.movements) : undefined,
+  };
 }
 
 /** Elimina movimientos duplicados por fecha+descripción+monto+balance+source+owner */
