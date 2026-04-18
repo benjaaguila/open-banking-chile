@@ -25,6 +25,7 @@ const DEFAULT_ARGS = [
   "--disable-setuid-sandbox",
   "--disable-dev-shm-usage",
   "--disable-gpu",
+  "--no-zygote",
   "--window-size=1280,900",
   "--disable-blink-features=AutomationControlled",
 ];
@@ -82,6 +83,7 @@ export async function launchBrowser(
     executablePath,
     headless: forceHeadful ? false : !headful,
     args: [...DEFAULT_ARGS, ...(extraArgs || [])],
+    timeout: 60000,
   });
 
   const page = await browser.newPage();
