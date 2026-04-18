@@ -359,6 +359,191 @@ interface BankScraper {
 }
 ```
 
+## API REST (Docker)
+
+Además del CLI y la librería, el proyecto incluye un servidor HTTP que expone cada banco como endpoint de API. Ideal para consumirlo desde otra aplicación sin necesidad de Node.js en el cliente.
+
+### Levantar con Docker
+
+```bash
+# Construir la imagen
+docker build -t open-banking-api .
+
+# Levantar el servidor (puerto 8080)
+docker run -p 8080:8080 \
+  -e API_KEY=tu_clave_secreta \
+  open-banking-api
+```
+
+El servidor arranca automáticamente con Xvfb (necesario para BancoEstado), Chromium y Node.js.
+
+**Variables de entorno disponibles:**
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `API_KEY` | _(ninguno)_ | Clave de autenticación. Si no se define, la API queda sin protección. |
+| `PORT` | `8080` | Puerto del servidor |
+| `RATE_LIMIT_MAX` | `30` | Máximo de requests por ventana de tiempo |
+| `RATE_LIMIT_WINDOW_MS` | `60000` | Ventana de rate limiting en milisegundos |
+| `CHROME_PATH` | auto | Ruta al ejecutable de Chromium |
+
+### Autenticación
+
+Todos los endpoints (salvo `/health`) requieren el header:
+
+```
+Authorization: Bearer <API_KEY>
+```
+
+### Endpoints
+
+#### `GET /health`
+Verifica que el servidor está corriendo. No requiere autenticación.
+
+```bash
+curl http://localhost:8080/health
+# → { "status": "ok", "jobs": 0 }
+```
+
+---
+
+#### `GET /api/v1/banks`
+Lista los bancos disponibles con su ID, nombre y URL.
+
+```bash
+curl -H "Authorization: Bearer tu_clave_secreta" \
+  http://localhost:8080/api/v1/banks
+```
+
+```json
+[
+  { "id": "santander", "name": "Banco Santander", "url": "https://banco.santander.cl/personas" },
+  { "id": "falabella", "name": "Banco Falabella", "url": "https://www.bancofalabella.cl" }
+]
+```
+
+---
+
+#### `POST /api/v1/scrape`
+Inicia un scraping en segundo plano y retorna inmediatamente un `jobId` para hacer seguimiento. Las credenciales se usan en memoria durante el scraping y se descartan al finalizar — nunca se almacenan.
+
+**Body:**
+
+| Campo | Tipo | Requerido | Descripción |
+|-------|------|-----------|-------------|
+| `bank` | string | ✅ | ID del banco (ej: `"santander"`) |
+| `rut` | string | ✅ | RUT del titular (ej: `"12345678-9"`) |
+| `password` | string | ✅ | Clave de internet del banco |
+| `owner` | `"T"` \| `"A"` \| `"B"` | — | Filtro de tarjeta titular/adicional/ambos (default: `"B"`) |
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer tu_clave_secreta" \
+  -H "Content-Type: application/json" \
+  -d '{"bank":"santander","rut":"12345678-9","password":"tu_clave"}' \
+  http://localhost:8080/api/v1/scrape
+
+# → { "jobId": "abc-123", "status": "queued" }
+```
+
+---
+
+#### `GET /api/v1/jobs/:id`
+Consulta el estado de un job. Hacer polling cada 3-5 segundos hasta que `status` sea `completed` o `failed`.
+
+**Estados posibles:**
+
+| Estado | Descripción |
+|--------|-------------|
+| `queued` | En espera para iniciar |
+| `running` | Scraping en curso (el campo `progress` muestra el paso actual) |
+| `awaiting_2fa` | El banco solicitó segundo factor — el usuario debe aprobarlo en su app bancaria |
+| `completed` | Scraping exitoso, el campo `result` contiene los movimientos |
+| `failed` | Error, el campo `error` describe el problema |
+
+```bash
+curl -H "Authorization: Bearer tu_clave_secreta" \
+  http://localhost:8080/api/v1/jobs/abc-123
+```
+
+Respuesta mientras corre:
+```json
+{ "id": "abc-123", "bank": "santander", "status": "running", "progress": "Extrayendo movimientos..." }
+```
+
+Respuesta al completar:
+```json
+{
+  "id": "abc-123",
+  "bank": "santander",
+  "status": "completed",
+  "result": {
+    "success": true,
+    "bank": "santander",
+    "accounts": [
+      {
+        "label": "Cuenta Corriente ****1234",
+        "balance": 1250000,
+        "movements": [
+          {
+            "date": "08-03-2026",
+            "description": "COMPRA SUPERMERCADO LIDER",
+            "amount": -45230,
+            "balance": 1250000,
+            "source": "account"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+#### `DELETE /api/v1/jobs/:id`
+Elimina un job de la memoria del servidor.
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer tu_clave_secreta" \
+  http://localhost:8080/api/v1/jobs/abc-123
+```
+
+---
+
+### Flujo completo de ejemplo
+
+```bash
+# 1. Iniciar scraping
+JOB=$(curl -s -X POST \
+  -H "Authorization: Bearer tu_clave_secreta" \
+  -H "Content-Type: application/json" \
+  -d '{"bank":"santander","rut":"12345678-9","password":"tu_clave"}' \
+  http://localhost:8080/api/v1/scrape)
+
+JOB_ID=$(echo $JOB | python3 -c "import sys,json; print(json.load(sys.stdin)['jobId'])")
+
+# 2. Polling hasta completar
+while true; do
+  RESULT=$(curl -s -H "Authorization: Bearer tu_clave_secreta" \
+    http://localhost:8080/api/v1/jobs/$JOB_ID)
+  STATUS=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
+  echo "Estado: $STATUS"
+  [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ] && break
+  sleep 3
+done
+
+echo $RESULT | python3 -m json.tool
+```
+
+### Notas importantes
+
+- El scraping toma entre **30 y 90 segundos** por banco. Diseña tu cliente para hacer polling con paciencia.
+- Si el banco solicita **2FA** (BCI, Banco de Chile, Santander, Itaú), el job cambia a estado `awaiting_2fa`. El servidor espera automáticamente hasta 3 minutos mientras el usuario aprueba en su app bancaria.
+- Los resultados se eliminan de memoria **1 hora** después de completados.
+- El servidor no persiste estado: si el container se reinicia, los jobs en curso se pierden.
+
 ## Automatización (cron)
 
 ```bash
