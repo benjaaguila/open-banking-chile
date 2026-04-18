@@ -110,10 +110,15 @@ app.get("/api/v1/banks", (_req, res) => {
 
 // Submit scrape job
 app.post("/api/v1/scrape", (req, res) => {
-  const { bank, rut, password, owner } = req.body;
+  const { bank, rut, password, owner, fromDate } = req.body;
 
   if (!bank || !rut || !password) {
     res.status(400).json({ error: "Missing required fields: bank, rut, password" });
+    return;
+  }
+
+  if (fromDate && !/^\d{2}-\d{2}-\d{4}$/.test(fromDate)) {
+    res.status(400).json({ error: "fromDate debe estar en formato DD-MM-YYYY (ej: 01-03-2026)" });
     return;
   }
 
@@ -136,7 +141,7 @@ app.post("/api/v1/scrape", (req, res) => {
   jobs.set(jobId, job);
 
   // Run scrape in background (fire and forget)
-  runScrapeJob(job, scraper, { rut, password, owner });
+  runScrapeJob(job, scraper, { rut, password, owner, fromDate });
 
   res.status(202).json({ jobId, status: "queued" });
 });
@@ -187,7 +192,7 @@ app.delete("/api/v1/jobs/:id", (req, res) => {
 async function runScrapeJob(
   job: Job,
   scraper: ReturnType<typeof getBank> & {},
-  credentials: { rut: string; password: string; owner?: string },
+  credentials: { rut: string; password: string; owner?: string; fromDate?: string },
 ) {
   job.status = "running";
   job.progress = "Iniciando scraping...";
@@ -203,6 +208,7 @@ async function runScrapeJob(
       saveScreenshots: false,
       headful: false,
       owner: credentials.owner as "T" | "A" | "B" | undefined,
+      fromDate: credentials.fromDate,
       onProgress: (step: string) => {
         job.progress = step;
         // Detect 2FA from progress messages

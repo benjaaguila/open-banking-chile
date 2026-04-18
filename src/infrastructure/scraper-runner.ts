@@ -1,5 +1,5 @@
 import type { ScrapeResult, ScraperOptions } from "../types.js";
-import { logout } from "../utils.js";
+import { logout, filterByFromDate } from "../utils.js";
 import { launchBrowser, type BrowserOptions, type BrowserSession } from "./browser.js";
 
 export type ScrapeFn = (
@@ -41,7 +41,11 @@ export async function runScraper(
       !!saveScreenshots,
     );
 
-    return await scrapeFn(session, options);
+    const result = await scrapeFn(session, options);
+    if (result.success && options.fromDate) {
+      return filterByFromDate(result, options.fromDate);
+    }
+    return result;
   } catch (error) {
     return {
       success: false,

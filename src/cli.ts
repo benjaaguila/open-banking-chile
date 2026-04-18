@@ -114,6 +114,14 @@ Ejemplos:
   const ownerVal = ownerIdx >= 0 ? args[ownerIdx + 1]?.toUpperCase() : undefined;
   const owner = ownerVal === "T" || ownerVal === "A" || ownerVal === "B" ? ownerVal : undefined;
 
+  // Parse --from-date flag
+  const fromDateIdx = args.indexOf("--from-date");
+  const fromDate = fromDateIdx >= 0 ? args[fromDateIdx + 1] : undefined;
+  if (fromDate && !/^\d{2}-\d{2}-\d{4}$/.test(fromDate)) {
+    console.error("Error: --from-date debe estar en formato DD-MM-YYYY (ej: 01-03-2026)");
+    process.exit(1);
+  }
+
   if (isTTY) {
     spinner.start(`Conectando con ${bank.name}...`);
   } else {
@@ -127,6 +135,7 @@ Ejemplos:
     saveScreenshots: flags.has("--screenshots"),
     headful: flags.has("--headful"),
     ...(owner && { owner }),
+    ...(fromDate && { fromDate }),
     onProgress: isTTY ? (step) => spinner.update(step) : undefined,
   });
 
