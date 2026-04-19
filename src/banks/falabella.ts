@@ -141,6 +141,21 @@ async function login(page: Page, rut: string, password: string, debugLog: string
     if (await closeBtn.isVisible({ timeout: 2000 }).catch(() => false)) await closeBtn.click();
   } catch { /* no popup */ }
 
+  // Dismiss "Actualizar datos personales" and similar post-login modals
+  // (appear faster in headless/Cloud Run and get misidentified as errors)
+  try {
+    for (const label of [/cancelar/i, /ahora no/i, /más tarde/i, /no gracias/i, /omitir/i, /saltar/i]) {
+      const btn = page.getByRole("button", { name: label })
+        .or(page.getByRole("link", { name: label }))
+        .first();
+      if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await btn.click();
+        await delay(500);
+        break;
+      }
+    }
+  } catch { /* no modal */ }
+
   // Retry if products failed to load
   try {
     const retryBtn = page.getByText("Reintentar");
@@ -157,16 +172,25 @@ async function login(page: Page, rut: string, password: string, debugLog: string
     return { success: false, error: "El banco pide clave dinámica (2FA).", screenshot: ss };
   }
 
-  // Error check
-  const errorText = await page.locator(
-    '[class*="error"], [class*="alert"], [role="alert"], [class*="modal"], [class*="dialog"], [class*="snack"], [class*="toast"], [class*="notification"], [class*="popup"]'
-  )
-    .first()
-    .textContent({ timeout: 2000 })
-    .catch(() => null);
-  if (errorText && errorText.trim().length > 5 && errorText.trim().length < 200) {
+  // Error check — only fail on actual authentication error messages,
+  // not on informational modals like "Actualizar datos personales"
+  const authErrorPattern = /(error|incorrecto|inv[aá]lido|rechazado|bloqueado|fall[oó]|intenta nuevamente|credencial|clave.*(incorrecta|err[oó]nea)|rut.*(incorrecto|err[oó]neo))/i;
+  const errorCandidates = await page.evaluate(() => {
+    const msgs: string[] = [];
+    for (const sel of ['[class*="error"]', '[class*="alert"]', '[role="alert"]']) {
+      for (const el of Array.from(document.querySelectorAll(sel))) {
+        const t = (el as HTMLElement).innerText?.trim();
+        if (t) msgs.push(t);
+      }
+    }
+    return msgs;
+  });
+  const authError = errorCandidates.find(
+    t => t.length > 4 && t.length < 250 && authErrorPattern.test(t),
+  );
+  if (authError) {
     const ss = (await page.screenshot()).toString("base64");
-    return { success: false, error: `Error del banco: ${errorText.trim()}`, screenshot: ss };
+    return { success: false, error: `Error del banco: ${authError}`, screenshot: ss };
   }
 
   debugLog.push("6. Login OK!");
