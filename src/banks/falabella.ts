@@ -445,7 +445,10 @@ async function waitForCmrContent(page: Page, timeoutMs: number): Promise<void> {
   try {
     await page.waitForFunction((host: string) => {
       const el = document.querySelector(host) as Element & { shadowRoot?: ShadowRoot };
-      if (!el?.shadowRoot) return false;
+      if (!el?.shadowRoot) {
+        // No shadow DOM — fall back to checking the regular DOM
+        return document.querySelectorAll("table tbody tr td").length > 0;
+      }
       function collectAll(root: ShadowRoot | Element): Array<ShadowRoot | Element> {
         const found: Array<ShadowRoot | Element> = [root];
         for (const child of Array.from((root as Element).querySelectorAll("*"))) {
@@ -648,7 +651,7 @@ async function paginateCmrMovements(page: Page, source: MovementSource, debugLog
     const result: { rows: BankMovement[]; firstRow: string; clicked: boolean } = await page.evaluate(
       ({ host: h, src, isBilled }: { host: string; src: string; isBilled: boolean }) => {
         const shadowEl = document.querySelector(h) as Element & { shadowRoot?: ShadowRoot };
-        const topRoot = shadowEl?.shadowRoot || document;
+        const topRoot = shadowEl?.shadowRoot || document.body;
 
         function collectAll(root: ShadowRoot | Element | Document): Array<ShadowRoot | Element> {
           const found: Array<ShadowRoot | Element> = root instanceof Document ? [] : [root as Element];
@@ -779,7 +782,7 @@ async function paginateCmrMovements(page: Page, source: MovementSource, debugLog
     const changed = await page.waitForFunction(
       ({ host: h, prev, billed }: { host: string; prev: string; billed: boolean }) => {
         const el = document.querySelector(h) as Element & { shadowRoot?: ShadowRoot };
-        const topRoot = el?.shadowRoot || document;
+        const topRoot = el?.shadowRoot || document.body;
         function collectAll(root: ShadowRoot | Element | Document): Array<ShadowRoot | Element> {
           const found: Array<ShadowRoot | Element> = root instanceof Document ? [] : [root as Element];
           for (const child of Array.from((root as ParentNode).querySelectorAll("*"))) {
