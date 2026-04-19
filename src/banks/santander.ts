@@ -416,6 +416,19 @@ async function scrapeSantander(
     return { success: false, bank, accounts: [], error: `Error del banco: ${loginError}`, screenshot: ss as string, debug: debugLog.join("\n") };
   }
 
+  // If login iframe is still visible with login fields, login didn't complete
+  // Use Puppeteer's frame API (not page.evaluate) to bypass cross-origin restrictions
+  try {
+    const freshFrame = await getLoginFrame(page);
+    if (freshFrame) {
+      const rutField = await freshFrame.$("#rut");
+      if (rutField !== null) {
+        const ss = await page.screenshot({ encoding: "base64" });
+        return { success: false, bank, accounts: [], error: "Login fallido: formulario de acceso sigue visible tras el intento.", screenshot: ss as string, debug: debugLog.join("\n") };
+      }
+    }
+  } catch { /* frame detached — login likely succeeded */ }
+
   debugLog.push("6. Login OK.");
   progress("Sesión iniciada correctamente");
   await closePopups(page);
