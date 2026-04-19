@@ -237,9 +237,39 @@ async function selectMovementAccount(page: Page, index: number): Promise<boolean
 }
 
 async function navigateToMovements(page: Page, debugLog: string[]): Promise<void> {
+  debugLog.push(`  URL before nav: ${page.url()}`);
+
+  // Wait up to 20s for sidebar to render (Santander SPA loads async)
+  try {
+    await page.waitForFunction(
+      (mx: number) => {
+        const items = Array.from(document.querySelectorAll("button, a, span, li, div"));
+        return items.some((el) => {
+          const text = (el as HTMLElement).innerText?.trim().toLowerCase() || "";
+          const rect = (el as HTMLElement).getBoundingClientRect();
+          return rect.x < mx && (text === "cuentas" || text === "movimientos" || text.includes("mis cuentas"));
+        });
+      },
+      { timeout: 20000 },
+      SIDEBAR.maxX,
+    );
+    debugLog.push("  Sidebar ready");
+  } catch {
+    // Log what IS in the sidebar for diagnosis
+    const sidebarItems = await page.evaluate((mx: number) => {
+      const items = Array.from(document.querySelectorAll("button, a, span, li"));
+      return items
+        .filter((el) => (el as HTMLElement).getBoundingClientRect().x < mx)
+        .map((el) => (el as HTMLElement).innerText?.trim())
+        .filter(Boolean)
+        .slice(0, 30);
+    }, SIDEBAR.maxX);
+    debugLog.push(`  Sidebar wait timed out. Items at x<${SIDEBAR.maxX}: ${sidebarItems.join(" | ") || "(none)"}`);
+  }
+
   // Try sidebar: Cuentas → Movimientos
   const cuentasClicked = await clickSidebarItem(
-    page, [SIDEBAR.cuentas], ["cuentas"], SIDEBAR.maxX,
+    page, [SIDEBAR.cuentas], ["cuentas", "mis cuentas"], SIDEBAR.maxX,
   );
   if (cuentasClicked) {
     debugLog.push("  Sidebar: Cuentas");
@@ -281,24 +311,37 @@ async function navigateToMovements(page: Page, debugLog: string[]): Promise<void
 }
 
 async function navigateToCreditCardSection(page: Page, debugLog: string[]): Promise<boolean> {
+  debugLog.push(`  URL before TC nav: ${page.url()}`);
+
   // Open Tarjetas submenu
   const tarjetasClicked = await clickSidebarItem(
-    page, [SIDEBAR.tarjetas], ["tarjetas"], SIDEBAR.maxX,
+    page, [SIDEBAR.tarjetas], ["tarjetas", "mis tarjetas"], SIDEBAR.maxX,
   );
   if (tarjetasClicked) {
     debugLog.push("  Tarjetas menu opened");
     await delay(4000);
+    // Log what appeared after opening tarjetas submenu
+    const subItems = await page.evaluate((mx: number) => {
+      const items = Array.from(document.querySelectorAll("button, a, span, li"));
+      return items
+        .filter((el) => (el as HTMLElement).getBoundingClientRect().x < mx)
+        .map((el) => (el as HTMLElement).innerText?.trim())
+        .filter(Boolean)
+        .slice(0, 30);
+    }, SIDEBAR.maxX);
+    debugLog.push(`  Submenu items: ${subItems.join(" | ") || "(none)"}`);
   }
 
   // Click "Mis Tarjetas de Crédito"
   const tcClicked = await clickSidebarItem(
-    page, SIDEBAR.misTc, ["mis tarjetas de crédito", "mis tarjetas de credito"], SIDEBAR.maxX,
+    page, SIDEBAR.misTc, ["mis tarjetas de crédito", "mis tarjetas de credito", "tarjetas de crédito", "tarjetas de credito"], SIDEBAR.maxX,
   );
   if (tcClicked) {
     debugLog.push("  Opened 'Mis Tarjetas de Credito'");
     await delay(3500);
   }
 
+  debugLog.push(`  URL after TC nav: ${page.url()}`);
   if (page.url().toLowerCase().includes("saldos_tc")) return true;
 
   // Fallback: dashboard TC widget
@@ -419,7 +462,29 @@ async function scrapeSantander(
   debugLog.push("6. Login OK.");
   progress("Sesión iniciada correctamente");
   await closePopups(page);
-  await delay(4000); // extra wait for dashboard SPA to fully render
+
+  // Wait for post-login redirect (SPA may take time). Fail fast if IP is blocked.
+  try {
+    await page.waitForFunction(
+      () => !window.location.href.includes("/personas"),
+      { timeout: 15000 },
+    );
+    debugLog.push(`  Post-login URL: ${page.url()}`);
+  } catch {
+    const currentUrl = page.url();
+    debugLog.push(`  Post-login URL: ${currentUrl} (no redirect — IP may be blocked)`);
+    if (currentUrl.includes("/personas")) {
+      const ss = await page.screenshot({ encoding: "base64" });
+      return {
+        success: false,
+        bank,
+        accounts: [],
+        error: "Login no redirigió al portal autenticado. La IP del servidor puede estar bloqueada por Santander.",
+        screenshot: ss as string,
+        debug: debugLog.join("\n"),
+      };
+    }
+  }
 
   // 7. Navigate to movements
   debugLog.push("7. Navigating to movements...");
