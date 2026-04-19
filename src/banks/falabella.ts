@@ -191,7 +191,7 @@ async function scrapeAccountMovements(page: Page, debugLog: string[], doScreensh
 
   if (!navigated) {
     // Fallback: try clicking Cartola/Movimientos text links
-    for (const text of ["cartola", "últimos movimientos", "movimientos", "estado de cuenta"]) {
+    for (const text of ["cartola", "últimos movimientos", "movimientos"]) {
       const link = page.locator("a, button, [role='tab']").filter({ hasText: new RegExp(text, "i") }).first();
       if (await link.isVisible({ timeout: 2000 }).catch(() => false)) {
         try {
@@ -385,10 +385,11 @@ async function scrapeCreditCard(page: Page, debugLog: string[], doScreenshots: b
   const cupoData = await extractCupos(page, debugLog);
   if (cupoData) Object.assign(creditCard, cupoData);
 
-  // Click on CMR product card
-  const cmrLink = page.getByRole("link", { name: /CMR/ }).first()
-    .or(page.locator("#cardDetail0, [id^='cardDetail']").first())
-    .or(page.locator("a, button, div").filter({ hasText: /CMR/i }).first());
+  // Click on CMR product card via "Estado de cuenta" button
+  const cmrLink = page
+    .getByRole("button", { name: /estado de cuenta/i })
+    .or(page.getByRole("link", { name: /estado de cuenta/i }))
+    .first();
 
   if (!(await cmrLink.isVisible({ timeout: 5000 }).catch(() => false))) {
     debugLog.push("  [CMR] No CMR card found on dashboard");
