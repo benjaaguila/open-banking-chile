@@ -287,7 +287,7 @@ async function navigateToCreditCardSection(page: Page, debugLog: string[]): Prom
   );
   if (tarjetasClicked) {
     debugLog.push("  Tarjetas menu opened");
-    await delay(1500);
+    await delay(4000);
   }
 
   // Click "Mis Tarjetas de Crédito"
@@ -419,6 +419,7 @@ async function scrapeSantander(
   debugLog.push("6. Login OK.");
   progress("Sesión iniciada correctamente");
   await closePopups(page);
+  await delay(4000); // extra wait for dashboard SPA to fully render
 
   // 7. Navigate to movements
   debugLog.push("7. Navigating to movements...");
@@ -436,7 +437,7 @@ async function scrapeSantander(
   let movements: BankMovement[] = [];
 
   // Try API interception for checking account
-  const checkingCaptures = await interceptor.waitFor("santander-checking", 10_000);
+  const checkingCaptures = await interceptor.waitFor("santander-checking", 20_000);
   if (checkingCaptures.length > 0) {
     debugLog.push(`  Checking API: ${checkingCaptures.length} response(s) captured`);
     const apiMovements = normalizeSantanderCheckingApiMovements(checkingCaptures);
@@ -471,7 +472,7 @@ async function scrapeSantander(
   const tcReady = await navigateToCreditCardSection(page, debugLog);
   if (tcReady) {
     if (await clickTcTab(page, "movimientos por facturar")) {
-      const unbilledCaptures = await interceptor.waitFor("santander-credit-card-unbilled", 10_000);
+      const unbilledCaptures = await interceptor.waitFor("santander-credit-card-unbilled", 20_000);
       if (unbilledCaptures.length > 0) {
         const unbilledMovements = normalizeSantanderUnbilledApiMovements(unbilledCaptures);
         movements.push(...unbilledMovements);
@@ -484,7 +485,7 @@ async function scrapeSantander(
       }
     }
     if (await clickTcTab(page, "movimientos facturados")) {
-      const billedCaptures = await interceptor.waitFor("santander-credit-card-billed", 10_000);
+      const billedCaptures = await interceptor.waitFor("santander-credit-card-billed", 20_000);
       if (billedCaptures.length > 0) {
         const billedMovements = normalizeSantanderBilledApiMovements(billedCaptures);
         movements.push(...billedMovements);
