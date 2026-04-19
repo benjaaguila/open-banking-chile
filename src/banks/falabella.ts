@@ -415,9 +415,9 @@ async function scrapeCreditCard(page: Page, debugLog: string[], doScreenshots: b
     await waitForCmrContent(page, CMR_WAIT_MS);
   }
 
-  // ── No facturados (default tab) ────────────────────────────────
-  debugLog.push("10. [CMR] Extracting unbilled movements...");
-  progress("Extrayendo movimientos TC por facturar...");
+  // ── Últimos movimientos (single tab — contains all recent movements) ──
+  debugLog.push("10. [CMR] Extracting movements from Últimos movimientos...");
+  progress("Extrayendo movimientos TC...");
 
   // Extract billing period info
   const unbilledInfo = await extractUnbilledPeriodInfo(page);
@@ -425,39 +425,11 @@ async function scrapeCreditCard(page: Page, debugLog: string[], doScreenshots: b
   if (unbilledInfo.nextDueDate) creditCard.nextDueDate = normalizeDate(unbilledInfo.nextDueDate);
   if (unbilledInfo.periodExpenses !== undefined) creditCard.periodExpenses = unbilledInfo.periodExpenses;
 
-  const unbilledMovements = await paginateCmrMovements(page, MOVEMENT_SOURCE.credit_card_unbilled, debugLog);
-  debugLog.push(`  Unbilled: ${unbilledMovements.length} movements`);
-  allMovements.push(...unbilledMovements);
+  const movements = await paginateCmrMovements(page, MOVEMENT_SOURCE.credit_card_unbilled, debugLog);
+  debugLog.push(`  Movements: ${movements.length}`);
+  allMovements.push(...movements);
 
-  await screenshotIfEnabled(page, "07-cmr-no-facturados", doScreenshots, debugLog);
-
-  // ── Facturados tab ─────────────────────────────────────────────
-  debugLog.push("11. [CMR] Switching to facturados tab...");
-  progress("Extrayendo movimientos TC facturados...");
-
-  const tabClicked = await clickCmrTab(page, debugLog);
-  if (tabClicked) {
-    await delay(2000);
-    await waitForCmrContent(page, CMR_WAIT_MS);
-    await delay(3000);
-    await screenshotIfEnabled(page, "07-cmr-facturados", doScreenshots, debugLog);
-
-    // Extract last statement info
-    const billedInfo = await extractBilledStatementInfo(page);
-    if (billedInfo.billingDate && billedInfo.billedAmount && billedInfo.dueDate) {
-      creditCard.lastStatement = {
-        billingDate: normalizeDate(billedInfo.billingDate),
-        billedAmount: billedInfo.billedAmount,
-        dueDate: normalizeDate(billedInfo.dueDate),
-        minimumPayment: billedInfo.minimumPayment,
-      };
-      creditCard.billingPeriod = monthYearLabel(creditCard.lastStatement.billingDate);
-    }
-
-    const billedMovements = await paginateCmrMovements(page, MOVEMENT_SOURCE.credit_card_billed, debugLog);
-    debugLog.push(`  Billed: ${billedMovements.length} movements`);
-    allMovements.push(...billedMovements);
-  }
+  await screenshotIfEnabled(page, "07-cmr-movimientos", doScreenshots, debugLog);
 
   // Tag movements with card mask
   const cardMask = creditCard.label.match(/\*{4}\d{4}/)?.[0];
@@ -911,7 +883,7 @@ async function scrapeFalabella(options: ScraperOptions): Promise<ScrapeResult> {
     const { creditCard } = await scrapeCreditCard(page, debugLog, doScreenshots, progress, owner);
 
     const totalMov = accountMovements.length + (creditCard.movements?.length ?? 0);
-    debugLog.push(`12. Total: ${accountMovements.length} account + ${creditCard.movements?.length ?? 0} TC = ${totalMov}`);
+    debugLog.push(`11. Total: ${accountMovements.length} account + ${creditCard.movements?.length ?? 0} TC = ${totalMov}`);
     progress(`Listo — ${totalMov} movimientos totales`);
 
     await screenshotIfEnabled(page, "08-final", doScreenshots, debugLog);
