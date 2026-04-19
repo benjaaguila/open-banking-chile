@@ -258,7 +258,7 @@ async function scrapeBestado(
   // Check login errors
   const loginError = await page.evaluate(() => {
     const errorKeywords = ["contraseña", "clave incorrecta", "rut inválido", "credenciales", "bloqueado", "intente nuevamente", "reintente"];
-    const errorEls = document.querySelectorAll('[class*="error"], [class*="alert"], .input-messages');
+    const errorEls = document.querySelectorAll('[class*="error"], [class*="alert"], .input-messages, [class*="modal"], [class*="dialog"], [class*="snack"], [class*="toast"], [class*="notification"], [class*="popup"]');
     for (const el of errorEls) {
       const text = (el as HTMLElement).innerText?.trim().toLowerCase();
       if (text && errorKeywords.some(kw => text.includes(kw))) return (el as HTMLElement).innerText?.trim();

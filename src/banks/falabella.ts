@@ -158,7 +158,9 @@ async function login(page: Page, rut: string, password: string, debugLog: string
   }
 
   // Error check
-  const errorText = await page.locator('[class*="error"], [class*="alert"], [role="alert"]')
+  const errorText = await page.locator(
+    '[class*="error"], [class*="alert"], [role="alert"], [class*="modal"], [class*="dialog"], [class*="snack"], [class*="toast"], [class*="notification"], [class*="popup"]'
+  )
     .first()
     .textContent({ timeout: 2000 })
     .catch(() => null);

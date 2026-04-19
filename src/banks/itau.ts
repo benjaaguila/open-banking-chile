@@ -57,7 +57,7 @@ async function itauLogin(
 
   // Login error check
   const errorText = await page.evaluate(() => {
-    const sels = ['[class*="error"]', '[class*="alert"]', '[role="alert"]', ".msg-error-input"];
+    const sels = ['[class*="error"]', '[class*="alert"]', '[role="alert"]', ".msg-error-input", '[class*="modal"]', '[class*="dialog"]', '[class*="snack"]', '[class*="toast"]', '[class*="notification"]', '[class*="popup"]'];
     for (const sel of sels) {
       const els = document.querySelectorAll(sel);
       for (const el of els) {

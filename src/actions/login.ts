@@ -181,23 +181,46 @@ export async function detectLoginError(
     /(error|incorrect|inv[aá]lid|rechazad|bloquead|fall[oó]|intenta nuevamente|credencial|autentic|clave.*(err[oó]nea|incorrecta)|rut.*(err[oó]neo|incorrecto))/i;
 
   const extractMessages = async (ctx: Page | Frame): Promise<string[]> => {
-    return await ctx.evaluate(() => {
+    return await ctx.evaluate((patternSource: string) => {
+      const regex = new RegExp(patternSource, "i");
       const selectors = [
         '[class*="error"]',
         '[class*="alert"]',
         '[role="alert"]',
         '[class*="warning"]',
+        '[class*="modal"]',
+        '[class*="dialog"]',
+        '[class*="snack"]',
+        '[class*="toast"]',
+        '[class*="notification"]',
+        '[class*="popup"]',
+        '[class*="message"]',
       ];
+      const seen = new Set<string>();
       const messages: string[] = [];
       for (const selector of selectors) {
-        const elements = document.querySelectorAll(selector);
-        for (const element of elements) {
+        for (const element of document.querySelectorAll(selector)) {
           const text = (element as HTMLElement).innerText?.trim();
-          if (text) messages.push(text);
+          if (text && !seen.has(text)) {
+            seen.add(text);
+            messages.push(text);
+          }
+        }
+      }
+      // Always scan visible elements matching the error pattern, regardless of CSS classes
+      for (const el of document.querySelectorAll("p, span, div, li, h1, h2, h3, h4")) {
+        const htmlEl = el as HTMLElement;
+        if (htmlEl.offsetParent === null) continue;
+        const text = htmlEl.innerText?.trim();
+        if (!text || text.length < 5 || text.length > 300) continue;
+        if (!regex.test(text)) continue;
+        if (!seen.has(text)) {
+          seen.add(text);
+          messages.push(text);
         }
       }
       return messages;
-    });
+    }, pattern.source);
   };
 
   const pickError = (candidates: string[]): string | null => {
