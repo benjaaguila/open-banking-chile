@@ -165,7 +165,7 @@ app.get("/api/v1/jobs/:id", (req, res) => {
   if (job.completedAt) response.completedAt = job.completedAt;
 
   if (job.status === "completed" && job.result) {
-    const { screenshot: _, debug: __, ...safeResult } = job.result;
+    const { screenshot: _, ...safeResult } = job.result;
     response.result = safeResult;
   }
 
