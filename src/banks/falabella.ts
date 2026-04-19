@@ -387,11 +387,15 @@ async function scrapeCreditCard(page: Page, debugLog: string[], doScreenshots: b
   const cupoData = await extractCupos(page, debugLog);
   if (cupoData) Object.assign(creditCard, cupoData);
 
-  // Click on CMR product card via "Estado de cuenta" button
-  const cmrLink = page
-    .getByRole("button", { name: /estado de cuenta/i })
-    .or(page.getByRole("link", { name: /estado de cuenta/i }))
-    .first();
+  // Click on the CMR card directly to open the card detail page with
+  // "Últimos movimientos" / "Movimientos facturados" tabs.
+  // Do NOT use "Estado de cuenta" — that opens the PDF statements tab.
+  const cmrLink = (
+    page.getByRole("link", { name: /CMR Mastercard/i })
+      .or(page.getByRole("button", { name: /CMR Mastercard/i }))
+      .or(page.locator("[id^='cardDetail']"))
+      .or(page.locator("a, button").filter({ hasText: /CMR Mastercard/i }))
+  ).first();
 
   if (!(await cmrLink.isVisible({ timeout: 5000 }).catch(() => false))) {
     debugLog.push("  [CMR] No CMR card found on dashboard");
@@ -417,34 +421,31 @@ async function scrapeCreditCard(page: Page, debugLog: string[], doScreenshots: b
     await waitForCmrContent(page, CMR_WAIT_MS);
   }
 
-  // ── No facturados (default tab) ────────────────────────────────
-  debugLog.push("10. [CMR] Extracting unbilled movements...");
+  // ── Últimos movimientos (default tab) ─────────────────────────
+  debugLog.push("10. [CMR] Extracting Últimos movimientos...");
   progress("Extrayendo movimientos TC por facturar...");
 
-  // Extract billing period info
   const unbilledInfo = await extractUnbilledPeriodInfo(page);
   if (unbilledInfo.nextBillingDate) creditCard.nextBillingDate = normalizeDate(unbilledInfo.nextBillingDate);
   if (unbilledInfo.nextDueDate) creditCard.nextDueDate = normalizeDate(unbilledInfo.nextDueDate);
   if (unbilledInfo.periodExpenses !== undefined) creditCard.periodExpenses = unbilledInfo.periodExpenses;
 
   const unbilledMovements = await paginateCmrMovements(page, MOVEMENT_SOURCE.credit_card_unbilled, debugLog);
-  debugLog.push(`  Unbilled: ${unbilledMovements.length} movements`);
+  debugLog.push(`  Últimos: ${unbilledMovements.length} movements`);
   allMovements.push(...unbilledMovements);
 
-  await screenshotIfEnabled(page, "07-cmr-no-facturados", doScreenshots, debugLog);
+  await screenshotIfEnabled(page, "07-cmr-ultimos", doScreenshots, debugLog);
 
-  // ── Facturados tab ─────────────────────────────────────────────
-  debugLog.push("11. [CMR] Switching to facturados tab...");
+  // ── Movimientos facturados tab ─────────────────────────────────
+  debugLog.push("11. [CMR] Switching to Movimientos facturados...");
   progress("Extrayendo movimientos TC facturados...");
 
   const tabClicked = await clickCmrTab(page, debugLog);
   if (tabClicked) {
     await delay(2000);
     await waitForCmrContent(page, CMR_WAIT_MS);
-    await delay(3000);
     await screenshotIfEnabled(page, "07-cmr-facturados", doScreenshots, debugLog);
 
-    // Extract last statement info
     const billedInfo = await extractBilledStatementInfo(page);
     if (billedInfo.billingDate && billedInfo.billedAmount && billedInfo.dueDate) {
       creditCard.lastStatement = {
@@ -457,7 +458,7 @@ async function scrapeCreditCard(page: Page, debugLog: string[], doScreenshots: b
     }
 
     const billedMovements = await paginateCmrMovements(page, MOVEMENT_SOURCE.credit_card_billed, debugLog);
-    debugLog.push(`  Billed: ${billedMovements.length} movements`);
+    debugLog.push(`  Facturados: ${billedMovements.length} movements`);
     allMovements.push(...billedMovements);
   }
 
@@ -475,7 +476,14 @@ async function waitForCmrContent(page: Page, timeoutMs: number): Promise<void> {
   try {
     await page.waitForFunction((host: string) => {
       const el = document.querySelector(host) as Element & { shadowRoot?: ShadowRoot };
-      if (!el?.shadowRoot) return false;
+      if (!el?.shadowRoot) {
+        // No shadow DOM — wait for a movement table row with a date in the first cell
+        return Array.from(document.querySelectorAll("table tbody tr")).some(row => {
+          const cells = row.querySelectorAll("td");
+          if (cells.length < 4) return false;
+          return /\d{1,2}\/\d{1,2}\/\d{4}/.test((cells[0] as HTMLElement).innerText?.trim() || "");
+        });
+      }
       function collectAll(root: ShadowRoot | Element): Array<ShadowRoot | Element> {
         const found: Array<ShadowRoot | Element> = [root];
         for (const child of Array.from((root as Element).querySelectorAll("*"))) {
@@ -678,7 +686,7 @@ async function paginateCmrMovements(page: Page, source: MovementSource, debugLog
     const result: { rows: BankMovement[]; firstRow: string; clicked: boolean } = await page.evaluate(
       ({ host: h, src, isBilled }: { host: string; src: string; isBilled: boolean }) => {
         const shadowEl = document.querySelector(h) as Element & { shadowRoot?: ShadowRoot };
-        const topRoot = shadowEl?.shadowRoot || document;
+        const topRoot = shadowEl?.shadowRoot || document.body;
 
         function collectAll(root: ShadowRoot | Element | Document): Array<ShadowRoot | Element> {
           const found: Array<ShadowRoot | Element> = root instanceof Document ? [] : [root as Element];
@@ -809,7 +817,7 @@ async function paginateCmrMovements(page: Page, source: MovementSource, debugLog
     const changed = await page.waitForFunction(
       ({ host: h, prev, billed }: { host: string; prev: string; billed: boolean }) => {
         const el = document.querySelector(h) as Element & { shadowRoot?: ShadowRoot };
-        const topRoot = el?.shadowRoot || document;
+        const topRoot = el?.shadowRoot || document.body;
         function collectAll(root: ShadowRoot | Element | Document): Array<ShadowRoot | Element> {
           const found: Array<ShadowRoot | Element> = root instanceof Document ? [] : [root as Element];
           for (const child of Array.from((root as ParentNode).querySelectorAll("*"))) {
