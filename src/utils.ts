@@ -206,7 +206,7 @@ export function parseMovementDate(dateStr: string): Date {
 export function filterByFromDate(result: ScrapeResult, fromDate: string): ScrapeResult {
   const cutoff = parseMovementDate(fromDate);
   const filter = (movements: BankMovement[]) =>
-    movements.filter((m) => parseMovementDate(m.date) >= cutoff);
+    movements.filter((m) => m.date === "pendiente" || parseMovementDate(m.date) >= cutoff);
 
   return {
     ...result,
