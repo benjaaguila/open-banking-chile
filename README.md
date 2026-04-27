@@ -394,6 +394,7 @@ El servidor arranca automáticamente con Xvfb (necesario para BancoEstado), Chro
 | `RATE_LIMIT_MAX` | `30` | Máximo de requests por ventana de tiempo |
 | `RATE_LIMIT_WINDOW_MS` | `60000` | Ventana de rate limiting en milisegundos |
 | `CHROME_PATH` | auto | Ruta al ejecutable de Chromium |
+| `CREDENTIALS_TRANSIT_KEY` | _(ninguno)_ | Clave hex de 32 bytes para descifrar credenciales encriptadas en tránsito. Ver [Encriptación de credenciales](#encriptación-de-credenciales-en-tránsito). |
 
 ### Autenticación
 
@@ -440,10 +441,13 @@ Inicia un scraping en segundo plano y retorna inmediatamente un `jobId` para hac
 | Campo | Tipo | Requerido | Descripción |
 |-------|------|-----------|-------------|
 | `bank` | string | ✅ | ID del banco (ej: `"santander"`) |
-| `rut` | string | ✅ | RUT del titular (ej: `"12345678-9"`) |
-| `password` | string | ✅ | Clave de internet del banco |
+| `rut` | string | ✅* | RUT del titular (ej: `"12345678-9"`) |
+| `password` | string | ✅* | Clave de internet del banco |
+| `encryptedCredentials` | string | ✅* | Blob AES-256-GCM en base64 con `rut` y `password`. Alternativa segura a enviarlos en texto plano. Ver [Encriptación de credenciales](#encriptación-de-credenciales-en-tránsito). |
 | `owner` | `"T"` \| `"A"` \| `"B"` | — | Filtro de tarjeta titular/adicional/ambos (default: `"B"`) |
 | `fromDate` | string | — | Solo movimientos desde esta fecha (inclusive, formato `DD-MM-YYYY`) |
+
+_* Proporcionar `encryptedCredentials` **o** `rut` + `password`. No mezclar ambos._
 
 ```bash
 curl -X POST \
@@ -545,6 +549,52 @@ done
 
 echo $RESULT | python3 -m json.tool
 ```
+
+### Encriptación de credenciales en tránsito
+
+Por defecto el endpoint acepta `rut` y `password` en texto plano. Para escenarios donde el cliente no debe exponer credenciales en claro (proxies, logs, etc.), puedes enviarlas como un blob AES-256-GCM cifrado.
+
+**1. Configura la clave en el servidor**
+
+Genera una clave aleatoria de 32 bytes (64 caracteres hex) y defínela como variable de entorno:
+
+```bash
+# Generar clave
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# Exportar antes de levantar el servidor
+export CREDENTIALS_TRANSIT_KEY=<clave-hex-generada>
+node dist/server.js
+
+# O con Docker
+docker run -p 8080:8080 \
+  -e API_KEY=tu_clave_secreta \
+  -e CREDENTIALS_TRANSIT_KEY=<clave-hex-generada> \
+  open-banking-api
+```
+
+**2. Cifra las credenciales en el cliente**
+
+Usa la función `encryptCredentials` exportada desde el paquete:
+
+```typescript
+import { encryptCredentials } from "open-banking-chile/transit-crypto";
+
+const blob = encryptCredentials("12345678-9", "mi_clave", process.env.TRANSIT_KEY!);
+
+const res = await fetch("http://localhost:8080/api/v1/scrape", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer tu_api_key",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ bank: "santander", encryptedCredentials: blob }),
+});
+```
+
+**Funcionamiento interno:** el blob es `base64(iv[12] || ciphertext || authTag[16])` usando AES-256-GCM. La misma clave debe estar configurada en cliente y servidor. Si `CREDENTIALS_TRANSIT_KEY` no está definida en el servidor y llega un `encryptedCredentials`, el servidor responde `500`.
+
+---
 
 ### Notas importantes
 
