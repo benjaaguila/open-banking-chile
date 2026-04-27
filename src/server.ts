@@ -2,6 +2,7 @@ import express from "express";
 import crypto from "crypto";
 import { getBank, listBanks } from "./index.js";
 import type { ScrapeResult } from "./types.js";
+import { decryptCredentials } from "./transit-crypto.js";
 
 // --- Job Queue (in-memory) ---
 
@@ -110,10 +111,36 @@ app.get("/api/v1/banks", (_req, res) => {
 
 // Submit scrape job
 app.post("/api/v1/scrape", (req, res) => {
-  const { bank, rut, password, owner, fromDate } = req.body;
+  const { bank, rut: rawRut, password: rawPassword, encryptedCredentials, owner, fromDate } = req.body;
 
-  if (!bank || !rut || !password) {
-    res.status(400).json({ error: "Missing required fields: bank, rut, password" });
+  if (!bank) {
+    res.status(400).json({ error: "Missing required field: bank" });
+    return;
+  }
+
+  // Resolve credentials: accept either encrypted blob or plaintext (CLI/test backwards compat)
+  let rut: string;
+  let password: string;
+
+  if (encryptedCredentials) {
+    const transitKey = process.env.CREDENTIALS_TRANSIT_KEY;
+    if (!transitKey) {
+      res.status(500).json({ error: "CREDENTIALS_TRANSIT_KEY not configured on server" });
+      return;
+    }
+    try {
+      const decrypted = decryptCredentials(encryptedCredentials, transitKey);
+      rut = decrypted.rut;
+      password = decrypted.password;
+    } catch {
+      res.status(400).json({ error: "Invalid encryptedCredentials: decryption failed" });
+      return;
+    }
+  } else if (rawRut && rawPassword) {
+    rut = rawRut;
+    password = rawPassword;
+  } else {
+    res.status(400).json({ error: "Provide either encryptedCredentials or both rut and password" });
     return;
   }
 
