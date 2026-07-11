@@ -63,6 +63,39 @@ async function screenshotIfEnabled(page: Page, name: string, enabled: boolean, d
   return undefined;
 }
 
+// ─── Modal dismissal ─────────────────────────────────────────────
+
+async function dismissModalMessage(page: Page): Promise<void> {
+  try {
+    const modalVisible = await page.evaluate(() => {
+      const modal = document.querySelector("#modal-message");
+      if (!modal) return false;
+      const style = getComputedStyle(modal);
+      return style.display !== "none" && style.visibility !== "hidden" && modal.classList.toString().includes("show");
+    });
+    if (!modalVisible) return;
+
+    for (const label of [/aceptar/i, /cerrar/i, /entendido/i, /cancelar/i, /ahora no/i, /más tarde/i, /no gracias/i, /omitir/i, /continuar/i]) {
+      const btn = page.locator("#modal-message").getByRole("button", { name: label });
+      if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
+        await btn.click();
+        await delay(500);
+        return;
+      }
+    }
+
+    // Force-close if no button matched
+    await page.evaluate(() => {
+      const modal = document.querySelector("#modal-message") as HTMLElement | null;
+      if (modal) modal.style.display = "none";
+      for (const el of Array.from(document.querySelectorAll<HTMLElement>('[class*="ModalMessage_overlay"]'))) {
+        el.style.display = "none";
+      }
+    });
+    await delay(300);
+  } catch { /* best effort */ }
+}
+
 // ─── Login ───────────────────────────────────────────────────────
 
 async function login(page: Page, rut: string, password: string, debugLog: string[], doScreenshots: boolean, progress: (s: string) => void): Promise<{ success: true } | { success: false; error: string; screenshot?: string }> {
@@ -156,6 +189,9 @@ async function login(page: Page, rut: string, password: string, debugLog: string
     }
   } catch { /* no modal */ }
 
+  // Dismiss ModalMessage overlay (marketing/info modals that block pointer events)
+  await dismissModalMessage(page);
+
   // Retry if products failed to load
   try {
     const retryBtn = page.getByText("Reintentar");
@@ -203,6 +239,9 @@ async function login(page: Page, rut: string, password: string, debugLog: string
 async function scrapeAccountMovements(page: Page, debugLog: string[], doScreenshots: boolean, progress: (s: string) => void): Promise<{ movements: BankMovement[]; balance?: number }> {
   debugLog.push("7. [Cuenta] Looking for account...");
   progress("Buscando cartola de cuenta...");
+
+  // Dismiss any overlay modal that may block clicks
+  await dismissModalMessage(page);
 
   // Try clicking on Cuenta Corriente product card
   const ccLink = page.getByRole("link", { name: /Cuenta Corriente \d/ });
@@ -941,6 +980,7 @@ async function scrapeFalabella(options: ScraperOptions): Promise<ScrapeResult> {
       const closeBtn = page.getByRole("button", { name: "cerrar", exact: true });
       if (await closeBtn.isVisible({ timeout: 2000 }).catch(() => false)) await closeBtn.click();
     } catch { /* no popup */ }
+    await dismissModalMessage(page);
 
     const { creditCard } = await scrapeCreditCard(page, debugLog, doScreenshots, progress, owner);
 
