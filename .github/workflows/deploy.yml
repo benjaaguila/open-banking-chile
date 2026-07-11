@@ -38,6 +38,6 @@ jobs:
             --timeout 300 \
             --no-cpu-throttling \
             --execution-environment gen2 \
-            --set-env-vars API_KEY=${{ secrets.API_KEY }} \
+            --set-env-vars API_KEY=${{ secrets.API_KEY }},CREDENTIALS_TRANSIT_KEY=${{ secrets.CREDENTIALS_TRANSIT_KEY }} \
             --project ${{ secrets.GCP_PROJECT_ID }} \
             --quiet
