@@ -1,4 +1,4 @@
-# Open Banking Chile
+# Open Banking Chile Fork
 
 Scrapers open source para bancos chilenos. Obtén tus movimientos bancarios y saldo como JSON limpio.
 
